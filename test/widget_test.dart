@@ -10,11 +10,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:only_qibla/main.dart';
 
 void main() {
-  testWidgets('Only Qibla app loads', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
+  testWidgets('Only Qibla app loads with splash screen', (
+    WidgetTester tester,
+  ) async {
+    // Build our app and trigger a frame
     await tester.pumpWidget(const OnlyQiblaApp());
 
-    // Verify that the app title is shown
-    expect(find.text('🕋 Only Qibla'), findsOneWidget);
+    // Verify that the splash screen is shown
+    expect(find.text('Only Qibla'), findsOneWidget);
+    expect(find.text('Find Your Direction'), findsOneWidget);
   });
 }

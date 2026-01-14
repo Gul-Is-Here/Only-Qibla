@@ -28,7 +28,7 @@ Qibla Direction Confirmed
 
 ### 4. **Satellite Map View**
 ```
-https://gul-is-here.github.io/Only-Qibla/World Map with Qibla Path
+https://gul-is-here.github.io/Only-Qibla/
 See Your Distance to Makkah
 Visual Route to the Kaaba
 Satellite View Navigation

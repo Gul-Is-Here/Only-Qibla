@@ -15,21 +15,27 @@ class QiblaCompass extends StatelessWidget {
     // Check if pointing towards Qibla (within 5 degrees)
     final isAligned = qiblaAngle.abs() < 5;
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // Qibla angle display
-        _buildQiblaInfo(qiblaAngle, isAligned),
-        const SizedBox(height: 20),
+    return SingleChildScrollView(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const SizedBox(height: 10),
 
-        // 3D Compass
-        _build3DCompass(qiblaAngle, direction, isAligned),
+          // Qibla angle display
+          _buildQiblaInfo(qiblaAngle, isAligned),
+          const SizedBox(height: 15),
 
-        const SizedBox(height: 20),
+          // 3D Compass
+          _build3DCompass(qiblaAngle, direction, isAligned),
 
-        // Direction indicator
-        _buildDirectionIndicator(qiblaAngle, isAligned),
-      ],
+          const SizedBox(height: 15),
+
+          // Direction indicator
+          _buildDirectionIndicator(qiblaAngle, isAligned),
+
+          const SizedBox(height: 10),
+        ],
+      ),
     );
   }
 
@@ -78,121 +84,134 @@ class QiblaCompass extends StatelessWidget {
   }
 
   Widget _build3DCompass(double qiblaAngle, double direction, bool isAligned) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // Outer glow effect
-        Container(
-          width: 320,
-          height: 320,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: isAligned
-                    ? const Color(0xFF4CAF50).withOpacity(0.4)
-                    : const Color(0xFF4CAF50).withOpacity(0.1),
-                blurRadius: 40,
-                spreadRadius: 10,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Calculate responsive size (max 300, min 250)
+        final maxWidth = constraints.maxWidth;
+        final compassSize = (maxWidth * 0.8).clamp(250.0, 300.0);
+        final outerGlowSize = compassSize + 20;
+        final dialSize = compassSize - 20;
+        final ringSize = compassSize - 80;
+        final needleSize = compassSize - 100;
+        final centerSize = compassSize * 0.23;
+
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            // Outer glow effect
+            Container(
+              width: outerGlowSize,
+              height: outerGlowSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: isAligned
+                        ? const Color(0xFF4CAF50).withValues(alpha: 0.4)
+                        : const Color(0xFF4CAF50).withValues(alpha: 0.1),
+                    blurRadius: 40,
+                    spreadRadius: 10,
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
+            ),
 
-        // Compass base (outer ring)
-        Container(
-          width: 300,
-          height: 300,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                const Color(0xFF2E7D32).withOpacity(0.3),
-                const Color(0xFF1B5E20).withOpacity(0.5),
-                const Color(0xFF0D1B0F).withOpacity(0.8),
-              ],
-            ),
-            border: Border.all(
-              color: const Color(0xFF4CAF50).withOpacity(0.5),
-              width: 3,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.5),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
+            // Compass base (outer ring)
+            Container(
+              width: compassSize,
+              height: compassSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF2E7D32).withValues(alpha: 0.3),
+                    const Color(0xFF1B5E20).withValues(alpha: 0.5),
+                    const Color(0xFF0D1B0F).withValues(alpha: 0.8),
+                  ],
+                ),
+                border: Border.all(
+                  color: const Color(0xFF4CAF50).withValues(alpha: 0.5),
+                  width: 3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.5),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ),
-
-        // Rotating compass dial
-        AnimatedRotation(
-          turns: -direction / 360,
-          duration: const Duration(milliseconds: 300),
-          child: SizedBox(
-            width: 280,
-            height: 280,
-            child: CustomPaint(painter: CompassDialPainter()),
-          ),
-        ),
-
-        // Middle ring with degree markers
-        Container(
-          width: 220,
-          height: 220,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [
-                const Color(0xFF1A3A1C),
-                const Color(0xFF0D1B0F).withOpacity(0.9),
-              ],
             ),
-            border: Border.all(
-              color: const Color(0xFF4CAF50).withOpacity(0.3),
-              width: 2,
-            ),
-          ),
-        ),
 
-        // Qibla needle (points to Qibla)
-        AnimatedRotation(
-          turns: -qiblaAngle / 360,
-          duration: const Duration(milliseconds: 300),
-          child: SizedBox(
-            width: 200,
-            height: 200,
-            child: CustomPaint(
-              painter: QiblaNeedlePainter(isAligned: isAligned),
-            ),
-          ),
-        ),
-
-        // Center Kaaba icon
-        Container(
-          width: 70,
-          height: 70,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(
-              colors: [const Color(0xFF2E7D32), const Color(0xFF1B5E20)],
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF4CAF50).withOpacity(0.5),
-                blurRadius: 15,
-                spreadRadius: 2,
+            // Rotating compass dial
+            AnimatedRotation(
+              turns: -direction / 360,
+              duration: const Duration(milliseconds: 300),
+              child: SizedBox(
+                width: dialSize,
+                height: dialSize,
+                child: CustomPaint(painter: CompassDialPainter()),
               ),
-            ],
-          ),
-          child: const Center(
-            child: Text('🕋', style: TextStyle(fontSize: 36)),
-          ),
-        ),
-      ],
+            ),
+
+            // Middle ring with degree markers
+            Container(
+              width: ringSize,
+              height: ringSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [
+                    const Color(0xFF1A3A1C),
+                    const Color(0xFF0D1B0F).withValues(alpha: 0.9),
+                  ],
+                ),
+                border: Border.all(
+                  color: const Color(0xFF4CAF50).withValues(alpha: 0.3),
+                  width: 2,
+                ),
+              ),
+            ),
+
+            // Qibla needle (points to Qibla)
+            AnimatedRotation(
+              turns: -qiblaAngle / 360,
+              duration: const Duration(milliseconds: 300),
+              child: SizedBox(
+                width: needleSize,
+                height: needleSize,
+                child: CustomPaint(
+                  painter: QiblaNeedlePainter(isAligned: isAligned),
+                ),
+              ),
+            ),
+
+            // Center Kaaba icon
+            Container(
+              width: centerSize,
+              height: centerSize,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  colors: [const Color(0xFF2E7D32), const Color(0xFF1B5E20)],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF4CAF50).withValues(alpha: 0.5),
+                    blurRadius: 15,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Center(
+                child: Text('🕋', style: TextStyle(fontSize: centerSize * 0.5)),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

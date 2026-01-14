@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'screens/qibla_screen.dart';
+import 'screens/splash_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
   runApp(const OnlyQiblaApp());
 }
 
@@ -29,7 +30,7 @@ class OnlyQiblaApp extends StatelessWidget {
           centerTitle: true,
         ),
       ),
-      home: const QiblaScreen(),
+      home: const SplashScreen(),
     );
   }
 }

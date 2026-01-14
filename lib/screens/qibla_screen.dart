@@ -4,10 +4,13 @@ import 'package:flutter_qiblah/flutter_qiblah.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
 import '../widgets/qibla_compass.dart';
 import '../widgets/qibla_map_view.dart';
 import '../widgets/location_error_widget.dart';
 import '../widgets/compass_calibration_widget.dart';
+import '../services/offline_location_service.dart';
+import '../services/connectivity_service.dart';
 
 class QiblaScreen extends StatefulWidget {
   const QiblaScreen({super.key});
@@ -23,6 +26,9 @@ class _QiblaScreenState extends State<QiblaScreen>
   bool _showCalibration = false;
   Position? _currentPosition;
   bool _isLoadingLocation = false;
+  bool _isOfflineMode = false;
+  Timer? _backgroundUpdateTimer;
+  bool _isUpdatingInBackground = false;
 
   // Kaaba coordinates
   static const kaabaLat = 21.4225;
@@ -32,6 +38,55 @@ class _QiblaScreenState extends State<QiblaScreen>
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _startBackgroundUpdates();
+  }
+
+  @override
+  void dispose() {
+    _backgroundUpdateTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Start periodic background updates (every 5 minutes)
+  void _startBackgroundUpdates() {
+    _backgroundUpdateTimer = Timer.periodic(
+      const Duration(minutes: 5),
+      (timer) => _updateLocationSilently(),
+    );
+  }
+
+  /// Update location silently in background
+  Future<void> _updateLocationSilently() async {
+    if (_isUpdatingInBackground) return; // Prevent concurrent updates
+
+    setState(() => _isUpdatingInBackground = true);
+
+    try {
+      // Check internet connectivity first
+      final hasInternet = await ConnectivityService.quickConnectivityCheck();
+
+      if (hasInternet) {
+        // Force refresh to get new location
+        final position = await OfflineLocationService.getCurrentPosition(
+          forceRefresh: true,
+        );
+
+        if (position != null && mounted) {
+          setState(() {
+            _currentPosition = position;
+            _isOfflineMode = false;
+          });
+
+          print('Background location update successful');
+        }
+      }
+    } catch (e) {
+      print('Silent background update failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isUpdatingInBackground = false);
+      }
+    }
   }
 
   Future<void> _getCurrentLocation() async {
@@ -40,51 +95,85 @@ class _QiblaScreenState extends State<QiblaScreen>
     });
 
     try {
-      // Check if location services are enabled
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) {
+      // Smart location fetch: returns cached instantly if available,
+      // updates in background when internet is available
+      Position? position = await OfflineLocationService.getCurrentPosition();
+
+      if (position == null) {
         setState(() => _isLoadingLocation = false);
         _showErrorSnackBar(
-          'Location services are disabled. Please enable GPS.',
+          'No location available. Please enable GPS and grant permissions.',
         );
         return;
       }
 
-      // Check permissions
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          setState(() => _isLoadingLocation = false);
-          _showErrorSnackBar(
-            'Location permission denied. Please grant access.',
-          );
-          return;
-        }
-      }
-
-      if (permission == LocationPermission.deniedForever) {
-        setState(() => _isLoadingLocation = false);
-        _showErrorSnackBar(
-          'Location permission permanently denied. Please enable in settings.',
-        );
-        return;
-      }
-
-      // Get current position
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
-        ),
-      );
+      // Check if using cached location
+      final hasCached = await OfflineLocationService.hasCachedLocation();
+      final cacheAge = await OfflineLocationService.getCacheAgeInHours();
 
       setState(() {
         _currentPosition = position;
         _isLoadingLocation = false;
+        _isOfflineMode = hasCached && (cacheAge ?? 0) > 0;
       });
 
-      // Show success message
+      // Show subtle success message
+      if (mounted) {
+        final locationText = _isOfflineMode && cacheAge != null && cacheAge > 0
+            ? 'Location loaded (cached ${cacheAge}h ago, updating...)'
+            : 'Location acquired successfully';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  _isOfflineMode ? Icons.cloud_queue : Icons.check_circle,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 8),
+                Expanded(child: Text(locationText)),
+              ],
+            ),
+            backgroundColor: _isOfflineMode
+                ? Colors.orange.shade700
+                : const Color(0xFF4CAF50),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoadingLocation = false);
+      _showErrorSnackBar('Error getting location. Please try again.');
+    }
+  }
+
+  /// Force refresh location (manual user action)
+  Future<void> _forceRefreshLocation() async {
+    setState(() {
+      _isLoadingLocation = true;
+    });
+
+    try {
+      // Force fresh GPS location
+      Position? position = await OfflineLocationService.getCurrentPosition(
+        forceRefresh: true,
+      );
+
+      if (position == null) {
+        setState(() => _isLoadingLocation = false);
+        _showErrorSnackBar(
+          'Unable to get fresh location. Please check GPS and internet.',
+        );
+        return;
+      }
+
+      setState(() {
+        _currentPosition = position;
+        _isLoadingLocation = false;
+        _isOfflineMode = false;
+      });
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -92,10 +181,8 @@ class _QiblaScreenState extends State<QiblaScreen>
               children: [
                 const Icon(Icons.check_circle, color: Colors.white),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Location: ${position.latitude.toStringAsFixed(4)}°, ${position.longitude.toStringAsFixed(4)}°',
-                  ),
+                Text(
+                  'Location refreshed: ${position.latitude.toStringAsFixed(4)}°, ${position.longitude.toStringAsFixed(4)}°',
                 ),
               ],
             ),
@@ -106,7 +193,7 @@ class _QiblaScreenState extends State<QiblaScreen>
       }
     } catch (e) {
       setState(() => _isLoadingLocation = false);
-      _showErrorSnackBar('Error getting location. Please try again.');
+      _showErrorSnackBar('Error refreshing location. Please try again.');
     }
   }
 
@@ -385,14 +472,75 @@ class _QiblaScreenState extends State<QiblaScreen>
             ],
           ),
 
-          // Title
-          const Text(
-            '🕋 Only Qibla',
-            style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-            ),
+          // Title with logo and offline indicator
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // App Logo
+                  Image.asset(
+                    'assets/images/logo.png',
+                    width: 28,
+                    height: 28,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Text('🕋', style: TextStyle(fontSize: 20));
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  const Text(
+                    'Only Qibla',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  if (_isUpdatingInBackground)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: SizedBox(
+                        width: 12,
+                        height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.green.shade400,
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              if (_isOfflineMode)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.cloud_off, size: 12, color: Colors.orange),
+                      SizedBox(width: 4),
+                      Text(
+                        'Offline',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.orange,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
 
           // Refresh location button
@@ -407,8 +555,8 @@ class _QiblaScreenState extends State<QiblaScreen>
                     ),
                   )
                 : const Icon(Icons.my_location, color: Colors.white70),
-            onPressed: _isLoadingLocation ? null : _getCurrentLocation,
-            tooltip: 'Find my position',
+            onPressed: _isLoadingLocation ? null : _forceRefreshLocation,
+            tooltip: 'Refresh location',
           ),
         ],
       ),
